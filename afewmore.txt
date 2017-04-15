@@ -1,0 +1,210 @@
+#! /bin/bash
+
+log() {
+    if [[ $OPTION_VERB == true ]]; then
+        echo -e "[\033[32mINFO\033[0m]" $@
+    fi
+}
+
+exit_with_error() {
+    echo -e "[\033[31mERROR\033[0m]" $@ >&2
+    exit 1
+}
+
+print_man() {
+    curl -s https://www.cs.stevens.edu/~jschauma/615/afewmore.1.txt | more
+    exit 0
+}
+
+get_master_info() {
+    MASTER=$(aws ec2 describe-instances --instance-ids $OPTION_ID --query 'Reservations[*].Instances[*].{iid:InstanceId, ip:PrivateIpAddress, dns:PublicDnsName, ami:ImageId, itype:InstanceType, sg:SecurityGroups[0].GroupId, key:KeyName}' --output json 2>&1)
+
+    if [[ $(echo $MASTER | grep "InvalidInstanceID" | wc -m) -gt 0 ]]; then
+        exit_with_error "invalid instance id \"$OPTION_ID\""
+    fi
+
+    MASTER=$(echo $MASTER | tr -d '"[]{} ')
+    MASTER=${MASTER//,/$'\n'}
+
+    for MASTER_CONFIG in $MASTER
+    do
+        if [[ $MASTER_CONFIG == iid:* ]]; then
+            MASTER_ID=$(echo $MASTER_CONFIG | sed 's/iid://g')
+        elif [[ $MASTER_CONFIG == ami:* ]]; then
+            MASTER_AMI=$(echo $MASTER_CONFIG | sed 's/ami://g')
+        elif [[ $MASTER_CONFIG == dns:* ]]; then
+            MASTER_DNS=$(echo $MASTER_CONFIG | sed 's/dns://g')
+        elif [[ $MASTER_CONFIG == ip:* ]]; then
+            MASTER_IP=$(echo $MASTER_CONFIG | sed 's/ip://g')
+        elif [[ $MASTER_CONFIG == sg:* ]]; then
+            MASTER_SG=$(echo $MASTER_CONFIG | sed 's/sg://g')
+        elif [[ $MASTER_CONFIG == itype:* ]]; then
+            MASTER_TYPE=$(echo $MASTER_CONFIG | sed 's/itype://g')
+        elif [[ $MASTER_CONFIG == key:* ]]; then
+            MASTER_KEY=$(echo $MASTER_CONFIG | sed 's/key://g')
+        fi
+    done
+
+    MASTER_UNAME=$(getuserhelper ${MASTER_DNS})
+
+    log "target instance id:" $MASTER_ID
+    log "target instance ami:" $MASTER_AMI
+    log "target instance dns:" $MASTER_DNS
+    log "target instance private ip:" $MASTER_IP
+    log "target instance security group id:" $MASTER_SG
+    log "target instance image type:" $MASTER_TYPE
+    log "target instance key name:" $MASTER_KEY
+    log "target instance uname:" $MASTER_UNAME
+}
+
+getuserhelper(){
+    mes=`ssh -q -o StrictHostKeyChecking=no root@$1 uname` 
+    wordnum=$(echo $mes | awk '{print NF}')
+    if [ $wordnum -gt "1" ]
+    then
+        echo $mes | sed 's/[^"]*"\([^"]*\)".*/\1/'
+    else 
+        echo "root"
+    fi
+}
+
+launch_slaves() {
+    SLAVES=$(aws ec2 run-instances --image-id $MASTER_AMI --security-group-ids $MASTER_SG --count $OPTION_NUM --instance-type $MASTER_TYPE --key-name $MASTER_KEY --query 'Instances[*].InstanceId')
+    SLAVES=$(echo $SLAVES | tr -d '"[] ' | sed -E 's/,/ /g')
+
+    SLAVE_IDX=0
+    for SLAVE in $SLAVES
+    do
+        SLAVE_IDS[$SLAVE_IDX]=$SLAVE
+
+        if [[ $OPTION_VERB == true ]]; then
+            log "new instance " ${SLAVE_IDS[$SLAVE_IDX]} "created"
+        else
+            echo ${SLAVE_IDS[$SLAVE_IDX]}
+        fi
+
+        ((SLAVE_IDX++))
+    done
+}
+
+get_slaves_dns() {
+    DNSES=$(aws ec2 describe-instances --instance-ids $SLAVES --query 'Reservations[*].Instances[*].PublicDnsName')
+    DNSES=$(echo $DNSES | tr -d '[]",')
+
+    SLAVE_DNS_IDX=0
+    for DNS in $DNSES
+    do
+        SLAVE_DNSES[$SLAVE_DNS_IDX]=$DNS
+
+        if [[ $OPTION_VERB == true ]]; then
+            log "obtained target dns " ${SLAVE_DNSES[$SLAVE_DNS_IDX]}
+        fi
+
+        ((SLAVE_DNS_IDX++))
+    done
+}
+
+ping_slaves() {
+    for DNS in $DNSES
+    do
+        SLAVE_STATUS=1
+        while [[ $SLAVE_STATUS > 0 ]]; do
+            log "pinging " $DNS
+            SLAVE_STATUS=$(nc -z $DNS 22 2>&1 | echo $?)
+        done
+
+        log $DNS " is online"
+    done
+}
+
+copy_data() {
+    log "start copying data"
+
+    for DNS in $DNSES
+    do
+        performcopy $MASTER_UNAME $MASTER_DNS $DNS
+    done
+
+    log "finish copying data"
+}
+
+performcopy() {
+    user=$1
+    sourcePublicDnsname=$2
+    spawnPublicDnsname=$3
+
+    #make a new directory
+    `ssh -q -o StrictHostKeyChecking=no ${user}@${spawnPublicDnsname} sudo mkdir -p ${OPTION_DIR}`
+    log "created directory \"${OPTION_DIR}\" on ${sourcePublicDnsname}"
+
+    #change the owner, use sudo to mkdir, owner is root, change it to ubuntu
+    `ssh -q -o StrictHostKeyChecking=no ${user}@${spawnPublicDnsname} sudo chown -R ${user} ${OPTION_DIR}`
+
+    #give the priority
+    `ssh -q -o StrictHostKeyChecking=no ${user}@${spawnPublicDnsname} sudo chmod -R 700 ${OPTION_DIR}`
+
+    #run scp command, the directory want to copy should be for exmaple /home/ubuntu/data/* to  /home/ubuntu/data/
+    `scp -q -o StrictHostKeyChecking=no -3 ${user}@${sourcePublicDnsname}:${OPTION_DIR}/* ${user}@${spawnPublicDnsname}:${OPTION_DIR}`
+    log "copied data to \"${OPTION_DIR}\" on ${sourcePublicDnsname}"
+}
+
+# main
+
+# initial check
+NUM_ARGS=$#
+if [[ $NUM_ARGS < 1 ]]; then
+    exit_with_error "no instance or option specified"
+fi
+
+if [[ $(echo $@ | egrep "(^| )-h($| )") ]]; then
+    print_man
+fi
+
+if [[ $(echo ${!NUM_ARGS} | egrep "^i-[0-9a-z]+$" | wc -m) -lt 1 ]]; then
+    exit_with_error "invalid instance id \"${!NUM_ARGS}\""
+fi
+
+# get options
+OPTION_ID=${!NUM_ARGS}
+OPTION_DIR="/data"
+OPTION_NUM="10"
+OPTION_VERB=false
+
+COUNT=$((NUM_ARGS-1))
+PREV=""
+for ARG in $@
+do
+    if [[ COUNT -lt 1 ]]; then
+        break
+    else
+        ((COUNT--))
+    fi
+
+    if [[ $(echo $ARG | egrep "^-" | wc -m) -gt 0 ]]; then
+        if [[ $ARG == "-v" ]]; then
+            OPTION_VERB=true
+        fi
+    else
+        if [[ $PREV == "-d" ]]; then
+            if [[ $(echo $ARG | egrep "^~?(\/[^\/]*)+$" | wc -m) -gt 0 ]]; then
+                OPTION_DIR=$ARG
+            else
+                exit_with_error "invalid directory \"$ARG\""
+            fi
+        elif [[ $PREV == "-n" ]]; then
+            if [[ $(echo $ARG | egrep "^[0-9]+$" | wc -m) -gt 0 ]]; then
+                OPTION_NUM=$ARG
+            else
+                exit_with_error "invalid number \"$ARG\""
+            fi
+        fi
+    fi
+
+    PREV=$ARG
+done
+
+get_master_info
+launch_slaves
+get_slaves_dns
+ping_slaves
+copy_data
