@@ -104,17 +104,35 @@ get_slaves_dns() {
     done
 }
 
-ping_slaves() {
-    for DNS in $DNSES
-    do
-        SLAVE_STATUS=1
-        while [[ $SLAVE_STATUS > 0 ]]; do
-            log "pinging " $DNS
-            SLAVE_STATUS=$(nc -z $DNS 22 2>&1 | echo $?)
-        done
+get_slaves_id() {
+    IDS=$(aws ec2 describe-instances --instance-ids $SLAVES --query 'Reservations[*].Instances[*].InstanceId')
+    IDS=$(echo $IDS | tr -d '[]",')
 
-        log $DNS " is online"
-    done
+    SLAVE_ID_IDX=0
+    for ID in $IDS
+    do
+        SLAVE_IDS[$SLAVE_ID_IDX]=$ID
+
+        if [[ $OPTION_VERB == true ]]; then
+            log "obtained target ids " ${SLAVE_IDS[$SLAVE_ID_IDX]}
+        fi
+
+        ((SLAVE_ID_IDX++))
+    done    
+}
+
+check_slaves() {
+    for ID in $IDS
+    do
+        SLAVE_STATUS=`aws ec2 describe-instance-status --instance-ids ${ID} --query 'InstanceStatuses[0].InstanceStatus.Status' | sed -e 's/^"//' -e 's/"$//'`
+        while [[ ${SLAVE_STATUS} != "cd ok" ]]; do
+            log "checking " $ID
+            SLAVE_STATUS=`aws ec2 describe-instance-status --instance-ids ${ID} --query 'InstanceStatuses[0].InstanceStatus.Status' | sed -e 's/^"//' -e 's/"$//'`
+        done 
+
+        log $ID " is online"
+        
+    done 
 }
 
 copy_data() {
@@ -206,5 +224,6 @@ done
 get_master_info
 launch_slaves
 get_slaves_dns
-ping_slaves
+get_slaves_id
+check_slaves
 copy_data
