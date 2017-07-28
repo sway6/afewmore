@@ -3,21 +3,22 @@
 ![Shurnim icon](https://codemaxx.github.io/assets/images/emoji/terminal.png)
 
 ## Directory
+* [Background Introduction](#背景介绍)
 * [Project Introduction](#项目介绍)
 * [Instructions For Use](#使用说明)
   * [get the source code](#获取代码)
   * [Synopsis](#开发插件)
 * [Others](#其他)
+<a name="背景介绍"></a>
+## Background Introduction
+I have a course to learn **system administration**. Including run different command line on different systems such as **NetBSD**, **Sun Solaris**, **Linux** and so on. Some times I need to create the same type of instance for multiple times, so i decide to develop a command tool to create several same type of instances at one time.
 
+This command tool really save my time.
 <a name="项目介绍"></a>
 ## Projecte Introduction
 *"afewmore"* -- duplicate EC2 instances with their data directory<br>
 
 The *"afewmore tool"* can be used to duplicate a given EC2 instance.  When doing so, it creates multiple new instances and populates their data directory by copying the data from the original.
-  
-I have a course to learn system administration. Including run different command line on different systems such as **netBSD**, **sunSolar**, **linux** and so on. Some times I need to create the same type of instance for multiple times, so i decide to develop a command tool to create several same type of instances at one time.
-
-This command tool really save my time.
 
 I developed this command tool using **shell script**
 
