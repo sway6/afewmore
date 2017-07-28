@@ -15,7 +15,7 @@ I have a course to learn **system administration**. Including run different comm
 
 This command tool really save my time.
 <a name="项目介绍"></a>
-## Projecte Introduction
+## Project Introduction
 *"afewmore"* -- duplicate EC2 instances with their data directory<br>
 
 The *"afewmore tool"* can be used to duplicate a given EC2 instance.  When doing so, it creates multiple new instances and populates their data directory by copying the data from the original.
