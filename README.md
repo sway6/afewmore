@@ -13,7 +13,7 @@
 ## Projecte Introduction
 *"afewmore"* -- duplicate EC2 instances with their data directory<br>
 
-The **afewmore tool** can be used to duplicate a given EC2 instance.  When doing so, it creates multiple new instances and populates their data directory by copying the data from the original.
+The *"afewmore tool"* can be used to duplicate a given EC2 instance.  When doing so, it creates multiple new instances and populates their data directory by copying the data from the original.
   
 I have a course to learn system administration. Including run different command line on different systems such as **netBSD**, **sunSolar**, **linux** and so on. Some times I need to create the same type of instance for multiple times, so i decide to develop a command tool to create several same type of instances at one time.
 
