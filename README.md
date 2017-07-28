@@ -36,7 +36,8 @@ afewmore [-hv] [-d dir] [-n num] instance
 
     -d dir:   
     
-    Copy the contents of this data directory from the orignal source instance to all the new instances.  If not specified, defaults to /data.
+    Copy the contents of this data directory from the orignal source instance to all the new instances.  
+    If not specified, defaults to /data.
 
     -h  :       
     Print a usage statement and exit.
